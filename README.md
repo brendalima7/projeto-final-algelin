@@ -1,58 +1,119 @@
-# projeto-final-algelin
+# Decomposição em Valores Singulares (SVD)
 
-## Remoção de background de vídeo com SVD
+Projeto de Álgebra Linear que explora a Decomposição em Valores Singulares em duas aplicações:
 
-### Ideia
+- compressão de imagens coloridas;
+- separação do background de vídeos com câmera fixa.
 
-Cada frame do vídeo (redimensionado e achatado) vira uma **coluna** de uma matriz `M`:
+## Estrutura do projeto
 
+```text
+.
+├── images/
+│   ├── image_compression/       # Imagem usada na compressão
+│   └── svd/background/         # Backgrounds estáticos extraídos
+├── notebooks/
+│   ├── IMAGE_COMPRESSION.ipynb # Compressão de imagem RGB
+│   └── BACKGROUND.ipynb        # Extração de background de vídeo
+├── videos/
+│   ├── original/               # Vídeos de entrada
+│   └── background/             # Vídeos de background reconstruídos
+├── utils.py                         # Funções compartilhadas
+└── pyproject.toml                   # Dependências e configuração do projeto
 ```
-M = [ f1 | f2 | ... | fn ]      (pixels × frames)
+
+## Compressão de imagem colorida
+
+O notebook [IMAGE_COMPRESSION.ipynb](notebooks/IMAGE_COMPRESSION.ipynb) comprime a imagem `images/image_compression/dog.jpg` sem convertê-la para escala de cinza.
+
+A SVD é calculada separadamente nos canais vermelho, verde e azul:
+
+```text
+Aᴄ = Uᴄ Σᴄ Vᴄᵀ,  c ∈ {R, G, B}
 ```
 
-Como a câmera é fixa, o background é praticamente igual em todos os frames, então as colunas de `M` são quase linearmente dependentes. Isso faz `M` ser aproximadamente de **posto baixo**:
+Cada canal é reconstruído com apenas os `r` maiores valores singulares e, ao final, os três canais são empilhados novamente. O notebook compara aproximações de postos `5`, `20` e `100`, além de exibir:
 
+- a média dos valores singulares dos três canais;
+- a soma acumulada normalizada desses valores.
+
+Quanto menor o posto, maior a compressão e menor a quantidade de detalhes preservados.
+
+## Remoção de background de vídeo
+
+O fluxo completo está no notebook [BACKGROUND.ipynb](notebooks/BACKGROUND.ipynb), com as funções auxiliares implementadas em [utils.py](utils.py).
+
+Cada frame do vídeo é redimensionado, achatado e armazenado como uma coluna da matriz `M`:
+
+```text
+M = [f₁ | f₂ | ... | fₙ]      (pixels × frames)
 ```
-M = U Σ Vᵀ ≈ σ1 · u1 · v1ᵀ
+
+Quando a câmera permanece fixa, o cenário muda pouco entre os frames. Assim, `M` pode ser aproximada por uma matriz de posto baixo:
+
+```text
+M = U Σ Vᵀ ≈ Uₖ Σₖ Vₖᵀ
 ```
 
-- `u1` (primeiro vetor singular à esquerda) é a "imagem" que melhor explica todos os frames, ou seja, o **background**.
-- `σ1 · v1ᵀ` dá o peso desse background em cada frame (variações de iluminação).
-- O produto `U[:, :k] Σk Vt[:k, :]` é a **projeção** de cada frame no subespaço gerado pelos `k` primeiros vetores singulares, o que corresponde ao background reconstruído.
-- O resíduo `M − background` guarda o que se move (**foreground**).
+- `Uₖ Σₖ Vₖᵀ` representa o background reconstruído;
+- `M − Uₖ Σₖ Vₖᵀ` representa o resíduo, onde se concentra o movimento;
+- pelo teorema de Eckart–Young, a SVD truncada fornece a melhor aproximação de posto `k` para `M`.
 
-Pelo teorema de Eckart–Young, essa truncagem é a melhor aproximação de posto `k` de `M`. Objetos em movimento ocupam pixels diferentes em cada frame, por isso não cabem num subespaço de dimensão baixa e ficam no resíduo.
+Atualmente, o repositório contém dois vídeos de entrada (`video_01.mp4` e `video_02.mp4`) e seus respectivos resultados. O notebook seleciona o vídeo por meio da variável:
 
-A implementação está em [utils.py](utils.py) (`separate_background`) e o fluxo completo em [notebooks/BACKGROUND.ipynb](notebooks/BACKGROUND.ipynb).
+```python
+n_video = 2
+```
 
-### Como executar
+As saídas são gravadas automaticamente em:
 
-1. Instale as dependências com [uv](https://docs.astral.sh/uv/):
+```text
+videos/background/background_0{n_video}.mp4
+images/svd/background/background_0{n_video}.png
+```
 
-   ```bash
-   uv sync
-   ```
+## Como executar
 
-2. Coloque o vídeo de entrada em `videos/original/` (de preferência com a câmera parada).
+### Pré-requisitos
 
-3. Abra `notebooks/BACKGROUND.ipynb` e troque o caminho do vídeo:
+- Python 3.11 ou superior;
+- [uv](https://docs.astral.sh/uv/).
 
-   ```python
-   video_path = "../videos/original/meu_video.mp4"
-   ```
+### Instalação
 
-4. Crie as pastas de saída, se ainda não existirem (o `cv2.VideoWriter` falha sem avisar quando a pasta não existe):
+Na raiz do projeto, instale as dependências:
 
-   ```bash
-   mkdir -p videos/svd/background images/svd/background
-   ```
+```bash
+uv sync
+```
 
-5. Rode todas as células. As saídas são:
-   - `videos/svd/background/background.mp4`: o background reconstruído, frame a frame
-   - `images/svd/background/background.png`: uma imagem estática do background (mediana dos frames)
+Inicie o Jupyter Lab sem alterar as dependências do projeto:
 
-### Parâmetros úteis
+```bash
+uv run --with jupyter jupyter lab
+```
 
-- `load_video(path, scale=0.25, max_frames=300)`: diminua `scale` ou `max_frames` se faltar memória, já que a matriz tem `(altura·largura·3) × n_frames` entradas.
-- `separate_background(M, k=1)`: `k=1` costuma bastar. Aumente `k` (2–3) se a iluminação variar bastante, mas saiba que um `k` grande demais começa a absorver o foreground.
-- `save_video(..., fps=20)`: ajuste ao FPS do vídeo original.
+Depois, abra e execute um dos notebooks da pasta `notebooks/`.
+
+### Usando outra imagem
+
+Coloque a imagem em `images/image_compression/` e altere o caminho em `IMAGE_COMPRESSION.ipynb`:
+
+```python
+A = imread('../images/image_compression/minha_imagem.jpg')
+```
+
+### Usando outro vídeo
+
+1. Coloque o arquivo em `videos/original/`, preferencialmente gravado com a câmera parada.
+2. Ajuste `n_video` ou substitua `video_path` em `BACKGROUND.ipynb`.
+3. Execute todas as células do notebook.
+
+## Parâmetros principais
+
+- `r`, em `IMAGE_COMPRESSION.ipynb`: quantidade de valores singulares preservados em cada canal RGB.
+- `load_video(path, scale=0.25, max_frames=300)`: controla a resolução e o número máximo de frames carregados.
+- `separate_background(M, k=1)`: define o posto usado na reconstrução do background. Valores maiores podem capturar variações de iluminação, mas também podem incorporar partes do foreground.
+- `save_video(frames, path, fps=20)`: define a taxa de quadros do vídeo gerado.
+
+O custo de memória da remoção de background cresce com `(altura · largura · 3) × número de frames`. Em caso de falta de memória, reduza `scale` ou `max_frames`.
